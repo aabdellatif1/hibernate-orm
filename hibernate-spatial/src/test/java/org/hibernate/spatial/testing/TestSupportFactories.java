@@ -14,6 +14,7 @@ import org.hibernate.spatial.testing.dialects.db2.DB2TestSupport;
 import org.hibernate.spatial.testing.dialects.h2geodb.GeoDBTestSupport;
 import org.hibernate.spatial.testing.dialects.hana.HANATestSupport;
 import org.hibernate.spatial.testing.dialects.mysql.MySQL56TestSupport;
+import org.hibernate.spatial.testing.dialects.mysql.MySQL8TestSupport;
 import org.hibernate.spatial.testing.dialects.mysql.MySQLTestSupport;
 import org.hibernate.spatial.testing.dialects.oracle.OracleSDOTestSupport;
 import org.hibernate.spatial.testing.dialects.postgis.PostgisTestSupport;
@@ -37,7 +38,6 @@ public class TestSupportFactories {
 
 	private static Class<? extends TestSupport> getSupportFactoryClass(Dialect dialect) {
 		String canonicalName = dialect.getClass().getCanonicalName();
-
 		if ( ( dialect instanceof SpatialDialect ) && PostgreSQL82Dialect.class.isAssignableFrom( dialect.getClass() ) ) {
 			//this test works because all postgis dialects ultimately derive of the Postgresql82Dialect
 			return PostgisTestSupport.class;
@@ -48,10 +48,18 @@ public class TestSupportFactories {
 		if ( "org.hibernate.spatial.dialect.sqlserver.SqlServer2008SpatialDialect".equals( canonicalName ) ) {
 			return SQLServerTestSupport.class;
 		}
+		if ( "org.hibernate.spatial.dialect.sqlserver.SqlServer2012SpatialDialect".equals( canonicalName ) ) {
+			return SQLServerTestSupport.class;
+		}
 		if ( "org.hibernate.spatial.dialect.mysql.MySQLSpatialDialect".equals( canonicalName ) ||
 				"org.hibernate.spatial.dialect.mysql.MySQL5InnoDBSpatialDialect".equals( canonicalName ) ) {
 			return MySQLTestSupport.class;
 		}
+
+		if ( "org.hibernate.spatial.dialect.mysql.MySQL8SpatialDialect".equals( canonicalName ) ) {
+			return MySQL8TestSupport.class;
+		}
+
 		if ( "org.hibernate.spatial.dialect.mysql.MySQL56SpatialDialect".equals( canonicalName ) ||
 				"org.hibernate.spatial.dialect.mysql.MySQL56InnoDBSpatialDialect".equals( canonicalName ) ) {
 			return MySQL56TestSupport.class;

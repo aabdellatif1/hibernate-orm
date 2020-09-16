@@ -46,15 +46,12 @@ public class DeprecatedNaturalIdCacheStatisticsImpl implements NaturalIdCacheSta
 	private final Lock readLock;
 	private final Lock writeLock;
 
-	{
-		final ReadWriteLock lock = new ReentrantReadWriteLock();
-		this.readLock = lock.readLock();
-		this.writeLock = lock.writeLock();
-	}
-
 	DeprecatedNaturalIdCacheStatisticsImpl(String regionName, Set<NaturalIdDataAccess> accessStrategies) {
 		this.regionName = regionName;
 		this.accessStrategies = accessStrategies;
+		final ReadWriteLock lock = new ReentrantReadWriteLock();
+		this.readLock = lock.readLock();
+		this.writeLock = lock.writeLock();
 	}
 
 	/**
@@ -66,7 +63,7 @@ public class DeprecatedNaturalIdCacheStatisticsImpl implements NaturalIdCacheSta
 	}
 
 	/**
-	 * average time in ms taken by the excution of this query onto the DB
+	 * average time in ms taken by the execution of this query onto the DB
 	 */
 	@Override
 	public long getExecutionAvgTime() {
@@ -87,7 +84,7 @@ public class DeprecatedNaturalIdCacheStatisticsImpl implements NaturalIdCacheSta
 	}
 
 	/**
-	 * max time in ms taken by the excution of this query onto the DB
+	 * max time in ms taken by the execution of this query onto the DB
 	 */
 	@Override
 	public long getExecutionMaxTime() {
@@ -95,7 +92,7 @@ public class DeprecatedNaturalIdCacheStatisticsImpl implements NaturalIdCacheSta
 	}
 
 	/**
-	 * min time in ms taken by the excution of this query onto the DB
+	 * min time in ms taken by the execution of this query onto the DB
 	 */
 	@Override
 	public long getExecutionMinTime() {

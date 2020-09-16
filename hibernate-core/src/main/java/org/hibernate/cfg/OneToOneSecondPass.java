@@ -8,11 +8,13 @@ package org.hibernate.cfg;
 
 import java.util.Iterator;
 import java.util.Map;
-import javax.persistence.ConstraintMode;
+
+import javax.persistence.JoinColumn;
+import javax.persistence.JoinColumns;
 
 import org.hibernate.AnnotationException;
+import org.hibernate.FetchMode;
 import org.hibernate.MappingException;
-import org.hibernate.annotations.ForeignKey;
 import org.hibernate.annotations.LazyGroup;
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.boot.spi.MetadataBuildingContext;
@@ -85,25 +87,25 @@ public class OneToOneSecondPass implements SecondPass {
 		final String propertyName = inferredData.getPropertyName();
 		value.setPropertyName( propertyName );
 		String referencedEntityName = ToOneBinder.getReferenceEntityName( inferredData, targetEntity, buildingContext );
-		value.setReferencedEntityName( referencedEntityName );  
+		value.setReferencedEntityName( referencedEntityName );
 		AnnotationBinder.defineFetchingStrategy( value, inferredData.getProperty() );
 		//value.setFetchMode( fetchMode );
 		value.setCascadeDeleteEnabled( cascadeOnDelete );
 		//value.setLazy( fetchMode != FetchMode.JOIN );
 
-		if ( !optional ) {
-			value.setConstrained( true );
-		}
-		if ( value.isReferenceToPrimaryKey() ) {
-			value.setForeignKeyType( ForeignKeyDirection.TO_PARENT );
-		}
-		else {
-			value.setForeignKeyType(
-					value.isConstrained()
-							? ForeignKeyDirection.FROM_PARENT
-							: ForeignKeyDirection.TO_PARENT
-			);
-		}
+		value.setConstrained( !optional );
+		final ForeignKeyDirection foreignKeyDirection = !BinderHelper.isEmptyAnnotationValue( mappedBy )
+				? ForeignKeyDirection.TO_PARENT
+				: ForeignKeyDirection.FROM_PARENT;
+		value.setForeignKeyType(foreignKeyDirection);
+		AnnotationBinder.bindForeignKeyNameAndDefinition(
+				value,
+				inferredData.getProperty(),
+				inferredData.getProperty().getAnnotation( javax.persistence.ForeignKey.class ),
+				inferredData.getProperty().getAnnotation( JoinColumn.class ),
+				inferredData.getProperty().getAnnotation( JoinColumns.class )
+		);
+
 		PropertyBinder binder = new PropertyBinder();
 		binder.setName( propertyName );
 		binder.setValue( value );
@@ -217,7 +219,7 @@ public class OneToOneSecondPass implements SecondPass {
 				else {
 					propertyHolder.addProperty( prop, inferredData.getDeclaringClass() );
 				}
-				
+
 				value.setReferencedPropertyName( mappedBy );
 
 				// HHH-6813
@@ -233,11 +235,16 @@ public class OneToOneSecondPass implements SecondPass {
 				}
 				boolean referenceToPrimaryKey  = referencesDerivedId || mappedBy == null;
 				value.setReferenceToPrimaryKey( referenceToPrimaryKey );
-				
-				// If the other side is a derived ID, prevent an infinite
-				// loop of attempts to resolve identifiers.
-				if ( referencesDerivedId ) {
-					( (ManyToOne) otherSideProperty.getValue() ).setReferenceToPrimaryKey( false );
+
+				// If the other side is a derived ID, and both sides are eager using FetchMode.JOIN,
+				// prevent an infinite loop of attempts to resolve identifiers by making
+				// this side use FetchMode.SELECT.
+				if ( referencesDerivedId &&
+						!value.isLazy() &&
+						value.getFetchMode() == FetchMode.JOIN &&
+						!otherSideProperty.isLazy() &&
+						otherSideProperty.getValue().getFetchMode() == FetchMode.JOIN ) {
+					value.setFetchMode( FetchMode.SELECT );
 				}
 
 				String propertyRef = value.getReferencedPropertyName();
@@ -259,28 +266,11 @@ public class OneToOneSecondPass implements SecondPass {
 				);
 			}
 		}
-
-		final ForeignKey fk = inferredData.getProperty().getAnnotation( ForeignKey.class );
-		if ( fk != null && !BinderHelper.isEmptyAnnotationValue( fk.name() ) ) {
-			value.setForeignKeyName( fk.name() );
-		}
-		else {
-			final javax.persistence.ForeignKey jpaFk = inferredData.getProperty().getAnnotation( javax.persistence.ForeignKey.class );
-			if ( jpaFk != null ) {
-				if ( jpaFk.value() == ConstraintMode.NO_CONSTRAINT ) {
-					value.setForeignKeyName( "none" );
-				}
-				else {
-					value.setForeignKeyName( StringHelper.nullIfEmpty( jpaFk.name() ) );
-					value.setForeignKeyDefinition( StringHelper.nullIfEmpty( jpaFk.foreignKeyDefinition() ) );
-				}
-			}
-		}
 	}
 
 	/**
-	 * Builds the <code>Join</code> instance for the mapped by side of a <i>OneToOne</i> association using 
-	 * a join tables.
+	 * Builds the <code>Join</code> instance for the mapped by side of a <i>OneToOne</i> association using
+	 * a join table.
 	 * <p>
 	 * Note:<br/>
 	 * <ul>

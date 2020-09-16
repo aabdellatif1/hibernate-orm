@@ -197,14 +197,6 @@ public class IdentNode extends FromReferenceNode implements SelectExpression {
 
 		String[] columnExpressions = element.getIdentityColumns();
 
-		// determine whether to apply qualification (table alias) to the column(s)...
-		if ( ! isFromElementUpdateOrDeleteRoot( element ) ) {
-			if ( StringHelper.isNotEmpty( element.getTableAlias() ) ) {
-				// apparently we also need to check that they are not already qualified.  Ugh!
-				columnExpressions = StringHelper.qualifyIfNot( element.getTableAlias(), columnExpressions );
-			}
-		}
-
 		final Dialect dialect = getWalker().getSessionFactoryHelper().getFactory().getDialect();
 		final boolean isInCount = getWalker().isInCount();
 		final boolean isInDistinctCount = isInCount && getWalker().isInCountDistinct();
@@ -222,6 +214,7 @@ public class IdentNode extends FromReferenceNode implements SelectExpression {
 				final boolean shouldSkipWrappingInParenthesis =
 						(isInDistinctCount && ! dialect.requiresParensForTupleDistinctCounts())
 						|| isInNonDistinctCount
+						|| getWalker().isInSelect() && !getWalker().isInCase() && !isInCount && dialect.supportsTuplesInSubqueries() // HHH-14156
 						|| getWalker().getCurrentTopLevelClauseType() == HqlSqlTokenTypes.ORDER
 						|| getWalker().getCurrentTopLevelClauseType() == HqlSqlTokenTypes.GROUP;
 				if ( ! shouldSkipWrappingInParenthesis ) {

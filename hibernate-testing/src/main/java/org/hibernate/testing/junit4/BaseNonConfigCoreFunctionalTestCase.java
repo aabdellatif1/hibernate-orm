@@ -16,10 +16,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.hibernate.HibernateException;
 import org.hibernate.Interceptor;
 import org.hibernate.Session;
+import org.hibernate.StatelessSession;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataBuilder;
 import org.hibernate.boot.MetadataSources;
@@ -36,6 +38,9 @@ import org.hibernate.dialect.H2Dialect;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.internal.build.AllowPrintStacktrace;
+import org.hibernate.internal.build.AllowSysOut;
+import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.jdbc.Work;
 import org.hibernate.mapping.Collection;
@@ -397,6 +402,8 @@ public class BaseNonConfigCoreFunctionalTestCase extends BaseUnitTestCase {
 		releaseResources();
 	}
 
+	@AllowSysOut
+	@AllowPrintStacktrace
 	protected void releaseResources() {
 		if ( sessionFactory != null ) {
 			try {
@@ -444,6 +451,11 @@ public class BaseNonConfigCoreFunctionalTestCase extends BaseUnitTestCase {
 
 	@After
 	public final void afterTest() throws Exception {
+		// see https://github.com/hibernate/hibernate-orm/pull/3412#issuecomment-678338398
+		if ( getDialect() instanceof H2Dialect ) {
+			ReflectHelper.getMethod( Class.forName( "org.h2.util.DateTimeUtils" ), "resetCalendar" ).invoke( null );
+		}
+
 		completeStrayTransaction();
 
 		if ( isCleanupTestDataRequired() ) {
@@ -499,6 +511,8 @@ public class BaseNonConfigCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 	public class RollbackWork implements Work {
+
+		@Override
 		public void execute(Connection connection) throws SQLException {
 			connection.rollback();
 		}
@@ -508,6 +522,7 @@ public class BaseNonConfigCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 	@SuppressWarnings( {"UnnecessaryBoxing", "UnnecessaryUnboxing"})
+	@AllowSysOut
 	protected void assertAllDataRemoved() {
 		if ( !createSchema() ) {
 			return; // no tables were created...
@@ -550,8 +565,28 @@ public class BaseNonConfigCoreFunctionalTestCase extends BaseUnitTestCase {
 		TransactionUtil2.inSession( sessionFactory(), action );
 	}
 
+	public void inStatelessSession(Consumer<StatelessSession> action) {
+		log.trace( "#inSession(action)" );
+		TransactionUtil2.inStatelessSession( sessionFactory(), action );
+	}
+
+	public <R> R fromSession(Function<SessionImplementor,R> action) {
+		log.trace( "#inSession(action)" );
+		return TransactionUtil2.fromSession( sessionFactory(), action );
+	}
+
 	public void inTransaction(Consumer<SessionImplementor> action) {
 		log.trace( "#inTransaction(action)" );
 		TransactionUtil2.inTransaction( sessionFactory(), action );
+	}
+
+	public void inStatelessTransaction(Consumer<StatelessSession> action) {
+		log.trace( "#inTransaction(action)" );
+		TransactionUtil2.inStatelessTransaction( sessionFactory(), action );
+	}
+
+	public <R> R fromTransaction(Function<SessionImplementor,R> action) {
+		log.trace( "#inTransaction(action)" );
+		return TransactionUtil2.fromTransaction( sessionFactory(), action );
 	}
 }

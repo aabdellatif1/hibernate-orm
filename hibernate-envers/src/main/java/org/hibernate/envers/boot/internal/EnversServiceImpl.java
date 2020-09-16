@@ -28,11 +28,8 @@ import org.hibernate.envers.internal.revisioninfo.RevisionInfoQueryCreator;
 import org.hibernate.envers.internal.synchronization.AuditProcessManager;
 import org.hibernate.envers.internal.tools.ReflectionTools;
 import org.hibernate.envers.strategy.AuditStrategy;
-import org.hibernate.envers.strategy.ValidityAuditStrategy;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
-import org.hibernate.internal.util.xml.XMLHelper;
-import org.hibernate.property.access.spi.Getter;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.service.spi.Configurable;
 import org.hibernate.service.spi.Stoppable;
@@ -76,8 +73,6 @@ public class EnversServiceImpl implements EnversService, Configurable, Stoppable
 	private RevisionInfoNumberReader revisionInfoNumberReader;
 	private ModifiedEntityNamesReader modifiedEntityNamesReader;
 
-	private XMLHelper xmlHelper;
-
 	@Override
 	public void configure(Map configurationValues) {
 		if ( configurationValues.containsKey( LEGACY_AUTO_REGISTER ) ) {
@@ -113,7 +108,6 @@ public class EnversServiceImpl implements EnversService, Configurable, Stoppable
 
 		this.serviceRegistry = metadata.getMetadataBuildingOptions().getServiceRegistry();
 		this.classLoaderService = serviceRegistry.getService( ClassLoaderService.class );
-		this.xmlHelper = new XMLHelper( classLoaderService );
 
 		doInitialize( metadata, mappingCollector, serviceRegistry );
 	}
@@ -182,22 +176,10 @@ public class EnversServiceImpl implements EnversService, Configurable, Stoppable
 			);
 		}
 
-		if ( strategy instanceof ValidityAuditStrategy ) {
-			// further initialization required
-			final Getter revisionTimestampGetter = ReflectionTools.getGetter(
-					revisionInfoClass,
-					revisionInfoTimestampData,
-					serviceRegistry
-			);
-			( (ValidityAuditStrategy) strategy ).setRevisionTimestampGetter( revisionTimestampGetter );
-		}
+		// Strategy-specific initialization
+		strategy.postInitialize( revisionInfoClass, revisionInfoTimestampData, serviceRegistry );
 
 		return strategy;
-	}
-
-	@Override
-	public XMLHelper getXmlHelper() {
-		return xmlHelper;
 	}
 
 	/**

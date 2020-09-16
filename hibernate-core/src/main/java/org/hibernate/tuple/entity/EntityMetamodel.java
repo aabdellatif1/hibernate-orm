@@ -8,6 +8,7 @@ package org.hibernate.tuple.entity;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -18,6 +19,7 @@ import java.util.Set;
 import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
+import org.hibernate.bytecode.enhance.spi.interceptor.EnhancementHelper;
 import org.hibernate.bytecode.spi.BytecodeEnhancementMetadata;
 import org.hibernate.cfg.NotYetImplementedException;
 import org.hibernate.engine.OptimisticLockStyle;
@@ -139,7 +141,30 @@ public class EntityMetamodel implements Serializable {
 		versioned = persistentClass.isVersioned();
 
 		if ( persistentClass.hasPojoRepresentation() ) {
-			bytecodeEnhancementMetadata = BytecodeEnhancementMetadataPojoImpl.from( persistentClass );
+			final Component identifierMapperComponent = persistentClass.getIdentifierMapper();
+			final CompositeType nonAggregatedCidMapper;
+			final Set<String> idAttributeNames;
+
+			if ( identifierMapperComponent != null ) {
+				nonAggregatedCidMapper = (CompositeType) identifierMapperComponent.getType();
+				idAttributeNames = new HashSet<>( );
+				//noinspection unchecked
+				final Iterator<Property> propertyItr = identifierMapperComponent.getPropertyIterator();
+				while ( propertyItr.hasNext() ) {
+					idAttributeNames.add( propertyItr.next().getName() );
+				}
+			}
+			else {
+				nonAggregatedCidMapper = null;
+				idAttributeNames = Collections.singleton( identifierAttribute.getName() );
+			}
+
+			bytecodeEnhancementMetadata = BytecodeEnhancementMetadataPojoImpl.from(
+					persistentClass,
+					idAttributeNames,
+					nonAggregatedCidMapper,
+					sessionFactory.getSessionFactoryOptions().isEnhancementAsProxyEnabled()
+			);
 		}
 		else {
 			bytecodeEnhancementMetadata = new BytecodeEnhancementMetadataNonPojoImpl( persistentClass.getEntityName() );
@@ -217,10 +242,16 @@ public class EntityMetamodel implements Serializable {
 			}
 
 			// temporary ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			boolean lazy = prop.isLazy() && bytecodeEnhancementMetadata.isEnhancedForLazyLoading();
+			boolean lazy = ! EnhancementHelper.includeInBaseFetchGroup(
+					prop,
+					bytecodeEnhancementMetadata.isEnhancedForLazyLoading(),
+					sessionFactory.getSessionFactoryOptions().isEnhancementAsProxyEnabled()
+			);
+
 			if ( lazy ) {
 				hasLazy = true;
 			}
+
 			propertyLaziness[i] = lazy;
 
 			propertyNames[i] = properties[i].getName();
@@ -519,7 +550,6 @@ public class EntityMetamodel implements Serializable {
 		private boolean hadInMemoryGeneration;
 		private boolean hadInDatabaseGeneration;
 
-		private List<InMemoryValueGenerationStrategy> inMemoryStrategies;
 		private List<InDatabaseValueGenerationStrategy> inDatabaseStrategies;
 
 		public CompositeGenerationStrategyPairBuilder(Property mappingProperty) {
@@ -532,11 +562,6 @@ public class EntityMetamodel implements Serializable {
 		}
 
 		private void add(InMemoryValueGenerationStrategy inMemoryStrategy) {
-			if ( inMemoryStrategies == null ) {
-				inMemoryStrategies = new ArrayList<>();
-			}
-			inMemoryStrategies.add( inMemoryStrategy );
-
 			if ( inMemoryStrategy.getGenerationTiming() != GenerationTiming.NEVER ) {
 				hadInMemoryGeneration = true;
 			}
@@ -785,8 +810,8 @@ public class EntityMetamodel implements Serializable {
 		}
 		else if ( type.isComponentType() ) {
 			Type[] subtypes = ( (CompositeType) type ).getSubtypes();
-			for ( int i = 0; i < subtypes.length; i++ ) {
-				if ( indicatesCollection( subtypes[i] ) ) {
+			for ( Type subtype : subtypes ) {
+					if ( indicatesCollection( subtype ) ) {
 					return true;
 				}
 			}

@@ -91,7 +91,12 @@ class PaddedBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuilder {
 
 		@Override
 		public Object load(Serializable id, Object optionalObject, SharedSessionContractImplementor session, LockOptions lockOptions) {
-			final Serializable[] batch = session.getPersistenceContext()
+			return load( id, optionalObject, session, lockOptions, null );
+		}
+
+		@Override
+		public Object load(Serializable id, Object optionalObject, SharedSessionContractImplementor session, LockOptions lockOptions, Boolean readOnly) {
+			final Serializable[] batch = session.getPersistenceContextInternal()
 					.getBatchFetchQueue()
 					.getEntityBatch( persister(), id, batchSizes[0], persister().getEntityMode() );
 
@@ -123,7 +128,7 @@ class PaddedBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuilder {
 				idsToLoad[i] = id;
 			}
 
-			return doBatchLoad( id, loaders[indexToUse], session, idsToLoad, optionalObject, lockOptions );
+			return doBatchLoad( id, loaders[indexToUse], session, idsToLoad, optionalObject, lockOptions, readOnly );
 		}
 	}
 

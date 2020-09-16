@@ -7,13 +7,12 @@
 package org.hibernate.stat.internal;
 
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.hibernate.stat.QueryStatistics;
-
-import org.jboss.logging.Logger;
 
 /**
  * Query statistics (HQL and SQL)
@@ -23,65 +22,65 @@ import org.jboss.logging.Logger;
  * @author Alex Snaps
  */
 public class QueryStatisticsImpl implements QueryStatistics {
-	private static final Logger log = Logger.getLogger( QueryStatisticsImpl.class );
-
 	private final String query;
 
-	private final AtomicLong cacheHitCount = new AtomicLong();
-	private final AtomicLong cacheMissCount = new AtomicLong();
-	private final AtomicLong cachePutCount = new AtomicLong();
-	private final AtomicLong executionCount = new AtomicLong();
-	private final AtomicLong executionRowCount = new AtomicLong();
+	private final LongAdder cacheHitCount = new LongAdder();
+	private final LongAdder cacheMissCount = new LongAdder();
+	private final LongAdder cachePutCount = new LongAdder();
+	private final LongAdder executionCount = new LongAdder();
+	private final LongAdder executionRowCount = new LongAdder();
 	private final AtomicLong executionMaxTime = new AtomicLong();
 	private final AtomicLong executionMinTime = new AtomicLong(Long.MAX_VALUE);
 	private final AtomicLong totalExecutionTime = new AtomicLong();
 
+	private final LongAdder planCacheHitCount = new LongAdder();
+	private final LongAdder planCacheMissCount = new LongAdder();
+	private final AtomicLong planCompilationTotalMicroseconds = new AtomicLong();
+
+
 	private final Lock readLock;
 	private final Lock writeLock;
 
-	{
-		ReadWriteLock lock = new ReentrantReadWriteLock();
-		readLock = lock.readLock();
-		writeLock = lock.writeLock();
-	}
-
 	QueryStatisticsImpl(String query) {
 		this.query = query;
+		ReadWriteLock lock = new ReentrantReadWriteLock();
+		this.readLock = lock.readLock();
+		this.writeLock = lock.writeLock();
 	}
 
 	/**
 	 * queries executed to the DB
 	 */
 	public long getExecutionCount() {
-		return executionCount.get();
+		return executionCount.sum();
 	}
 
 	/**
 	 * Queries retrieved successfully from the cache
 	 */
 	public long getCacheHitCount() {
-		return cacheHitCount.get();
+		return cacheHitCount.sum();
 	}
 
 	public long getCachePutCount() {
-		return cachePutCount.get();
+		return cachePutCount.sum();
 	}
 
 	public long getCacheMissCount() {
-		return cacheMissCount.get();
+		return cacheMissCount.sum();
 	}
 
 	/**
 	 * Number of lines returned by all the executions of this query (from DB)
 	 * For now, {@link org.hibernate.Query#iterate()}
-	 * and {@link org.hibernate.Query#scroll()()} do not fill this statistic
+	 * and {@link org.hibernate.Query#scroll()} do not fill this statistic
 	 *
 	 * @return The number of rows cumulatively returned by the given query; iterate
 	 *         and scroll queries do not effect this total as their number of returned rows
 	 *         is not known at execution time.
 	 */
 	public long getExecutionRowCount() {
-		return executionRowCount.get();
+		return executionRowCount.sum();
 	}
 
 	/**
@@ -101,9 +100,9 @@ public class QueryStatisticsImpl implements QueryStatistics {
 		writeLock.lock();
 		try {
 			double avgExecutionTime = 0;
-			if ( executionCount.get() > 0 ) {
-				avgExecutionTime = totalExecutionTime.get() / (double) executionCount
-						.get();
+			final long ec = executionCount.sum();
+			if ( ec > 0 ) {
+				avgExecutionTime = totalExecutionTime.get() / (double) ec;
 			}
 			return avgExecutionTime;
 		}
@@ -134,46 +133,73 @@ public class QueryStatisticsImpl implements QueryStatistics {
 	}
 
 	/**
+	 * Query plan successfully fetched from the cache
+	 */
+	public long getPlanCacheHitCount() {
+		return planCacheHitCount.sum();
+	}
+
+	/**
+	 * Query plan not fetched from the cache
+	 */
+	public long getPlanCacheMissCount() {
+		return planCacheMissCount.sum();
+	}
+
+	/**
+	 * Query plan overall compiled total
+	 */
+	public long getPlanCompilationTotalMicroseconds() {
+		return planCompilationTotalMicroseconds.get();
+	}
+
+	/**
 	 * add statistics report of a DB query
 	 *
 	 * @param rows rows count returned
 	 * @param time time taken
 	 */
 	void executed(long rows, long time) {
-		log.tracef( "QueryStatistics - query executed : %s", query );
-
 		// read lock is enough, concurrent updates are supported by the underlying type AtomicLong
 		// this only guards executed(long, long) to be called, when another thread is executing getExecutionAvgTime()
 		readLock.lock();
 		try {
 			// Less chances for a context switch
-			for (long old = executionMinTime.get(); (time < old) && !executionMinTime.compareAndSet(old, time); old = executionMinTime.get()) {}
-			for (long old = executionMaxTime.get(); (time > old) && !executionMaxTime.compareAndSet(old, time); old = executionMaxTime.get()) {}
-			executionCount.getAndIncrement();
-			executionRowCount.addAndGet(rows);
-			totalExecutionTime.addAndGet(time);
+			for ( long old = executionMinTime.get(); (time < old) && !executionMinTime.compareAndSet(old, time); old = executionMinTime.get() ) {}
+			for ( long old = executionMaxTime.get(); (time > old) && !executionMaxTime.compareAndSet(old, time); old = executionMaxTime.get() ) {}
+			executionCount.increment();
+			executionRowCount.add( rows );
+			totalExecutionTime.addAndGet( time );
 		}
 		finally {
 			readLock.unlock();
 		}
 	}
 
-	void incrementCacheHitCount() {
-		log.tracef( "QueryStatistics - cache hit : %s", query );
+	/**
+	 * add plan statistics report of a DB query
+	 *
+	 * @param microseconds time taken
+	 */
+	void compiled(long microseconds) {
+		planCacheMissCount.increment();
+		planCompilationTotalMicroseconds.addAndGet( microseconds );
+	}
 
-		cacheHitCount.getAndIncrement();
+	void incrementCacheHitCount() {
+		cacheHitCount.increment();
 	}
 
 	void incrementCacheMissCount() {
-		log.tracef( "QueryStatistics - cache miss : %s", query );
-
-		cacheMissCount.getAndIncrement();
+		cacheMissCount.increment();
 	}
 
 	void incrementCachePutCount() {
-		log.tracef( "QueryStatistics - cache put : %s", query );
+		cachePutCount.increment();
+	}
 
-		cachePutCount.getAndIncrement();
+	void incrementPlanCacheHitCount() {
+		planCacheHitCount.increment();
 	}
 
 	public String toString() {
@@ -182,6 +208,8 @@ public class QueryStatisticsImpl implements QueryStatistics {
 				+ ",cacheHitCount=" + this.cacheHitCount
 				+ ",cacheMissCount=" + this.cacheMissCount
 				+ ",cachePutCount=" + this.cachePutCount
+				+ ",planCacheHitCount=" + this.planCacheHitCount
+				+ ",planCacheMissCount=" + this.planCacheMissCount
 				+ ",executionCount=" + this.executionCount
 				+ ",executionRowCount=" + this.executionRowCount
 				+ ",executionAvgTime=" + this.getExecutionAvgTime()

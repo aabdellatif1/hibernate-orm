@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.persistence.PersistenceException;
@@ -43,11 +44,11 @@ import org.hibernate.metamodel.model.domain.NavigableRole;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.pretty.MessageHelper;
-import org.hibernate.type.descriptor.java.StringTypeDescriptor;
 
 /**
  * @author Steve Ebersole
  * @author Strong Liu
+ * @author Gail Badner
  */
 public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildingContext {
 	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( EnabledCaching.class );
@@ -56,6 +57,10 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 	private final RegionFactory regionFactory;
 
 	private final Map<String,Region> regionsByName = new ConcurrentHashMap<>();
+
+	// A map by name for QueryResultsRegion instances that have the same name as a Region
+	// in #regionsByName.
+	private final Map<String, QueryResultsRegion> queryResultsRegionsByDuplicateName = new ConcurrentHashMap<>();
 
 	private final Map<NavigableRole,EntityDataAccess> entityAccessMap = new ConcurrentHashMap<>();
 	private final Map<NavigableRole,NaturalIdDataAccess> naturalIdAccessMap = new ConcurrentHashMap<>();
@@ -78,7 +83,7 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 
 		if ( getSessionFactory().getSessionFactoryOptions().isQueryCacheEnabled() ) {
 			final TimestampsRegion timestampsRegion = regionFactory.buildTimestampsRegion(
-					TimestampsRegion.class.getName(),
+					RegionFactory.DEFAULT_UPDATE_TIMESTAMPS_REGION_UNQUALIFIED_NAME,
 					sessionFactory
 			);
 			timestampsCache = sessionFactory.getSessionFactoryOptions()
@@ -87,7 +92,7 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 			legacySecondLevelCacheNames.add( timestampsRegion.getName() );
 
 			final QueryResultsRegion queryResultsRegion = regionFactory.buildQueryResultsRegion(
-					QueryResultsRegion.class.getName(),
+					RegionFactory.DEFAULT_QUERY_RESULTS_REGION_UNQUALIFIED_NAME,
 					sessionFactory
 			);
 			regionsByName.put( queryResultsRegion.getName(), queryResultsRegion );
@@ -108,7 +113,7 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 			final DomainDataRegion region = getRegionFactory().buildDomainDataRegion( regionConfig, this );
 			regionsByName.put( region.getName(), region );
 
-			if ( !StringTypeDescriptor.INSTANCE.areEqual( region.getName(), regionConfig.getRegionName() ) ) {
+			if ( ! Objects.equals( region.getName(), regionConfig.getRegionName() ) ) {
 				throw new HibernateException(
 						String.format(
 								Locale.ROOT,
@@ -204,6 +209,8 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 
 	@Override
 	public Region getRegion(String regionName) {
+		// The Region in regionsByName has precedence over the
+		// QueryResultsRegion in #queryResultsRegionsByDuplicateName
 		return regionsByName.get( regionName );
 	}
 
@@ -488,12 +495,23 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 	}
 
 	protected QueryResultsCache makeQueryResultsRegionAccess(String regionName) {
-		final QueryResultsRegion region = (QueryResultsRegion) regionsByName.computeIfAbsent(
+		final Region region = regionsByName.computeIfAbsent(
 				regionName,
 				this::makeQueryResultsRegion
 		);
+		final QueryResultsRegion queryResultsRegion;
+		if ( QueryResultsRegion.class.isInstance( region ) ) {
+			queryResultsRegion = (QueryResultsRegion) region;
+		}
+		else {
+			// There was already a different type of Region with the same name.
+			queryResultsRegion = queryResultsRegionsByDuplicateName.computeIfAbsent(
+					regionName,
+					this::makeQueryResultsRegion
+			);
+		}
 		final QueryResultsCacheImpl regionAccess = new QueryResultsCacheImpl(
-				region,
+				queryResultsRegion,
 				timestampsCache
 		);
 		namedQueryResultsCacheMap.put( regionName, regionAccess );
@@ -502,19 +520,8 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 	}
 
 	protected QueryResultsRegion makeQueryResultsRegion(String regionName) {
-		// make sure there is not an existing domain-data region with that name..
-		final Region existing = regionsByName.get( regionName );
-		if ( existing != null ) {
-			if ( !QueryResultsRegion.class.isInstance( existing ) ) {
-				throw new IllegalStateException( "Cannot store both domain-data and query-result-data in the same region [" + regionName );
-			}
-
-			throw new IllegalStateException( "Illegal call to create QueryResultsRegion - one already existed" );
-		}
-
 		return regionFactory.buildQueryResultsRegion( regionName, getSessionFactory() );
 	}
-
 
 	@Override
 	public Set<String> getCacheRegionNames() {
@@ -524,6 +531,10 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 	@Override
 	public void evictRegion(String regionName) {
 		getRegion( regionName ).clear();
+		final QueryResultsRegion queryResultsRegionWithDuplicateName = queryResultsRegionsByDuplicateName.get( regionName );
+		if ( queryResultsRegionWithDuplicateName != null ) {
+			queryResultsRegionWithDuplicateName.clear();
+		}
 	}
 
 	@Override
@@ -543,6 +554,9 @@ public class EnabledCaching implements CacheImplementor, DomainDataRegionBuildin
 	@Override
 	public void close() {
 		for ( Region region : regionsByName.values() ) {
+			region.destroy();
+		}
+		for ( Region region : queryResultsRegionsByDuplicateName.values() ) {
 			region.destroy();
 		}
 	}

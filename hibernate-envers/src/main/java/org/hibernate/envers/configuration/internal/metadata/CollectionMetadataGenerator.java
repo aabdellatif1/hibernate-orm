@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import javax.persistence.EnumType;
 import javax.persistence.JoinColumn;
 
 import org.dom4j.Element;
@@ -42,6 +43,7 @@ import org.hibernate.envers.internal.entities.mapper.relation.ListCollectionMapp
 import org.hibernate.envers.internal.entities.mapper.relation.MapCollectionMapper;
 import org.hibernate.envers.internal.entities.mapper.relation.MiddleComponentData;
 import org.hibernate.envers.internal.entities.mapper.relation.MiddleIdData;
+import org.hibernate.envers.internal.entities.mapper.relation.MiddleMapKeyEnumeratedComponentMapper;
 import org.hibernate.envers.internal.entities.mapper.relation.SortedMapCollectionMapper;
 import org.hibernate.envers.internal.entities.mapper.relation.SortedSetCollectionMapper;
 import org.hibernate.envers.internal.entities.mapper.relation.ToOneIdMapper;
@@ -214,7 +216,8 @@ public final class CollectionMetadataGenerator {
 		// in a join table, so the prefix value is arbitrary).
 		final MiddleIdData referencedIdData = createMiddleIdData(
 				referencedIdMapping,
-				null, referencedEntityName
+				null,
+				referencedEntityName
 		);
 
 		// Generating the element mapping.
@@ -237,14 +240,18 @@ public final class CollectionMetadataGenerator {
 				referencedIdData,
 				isEmbeddableElementType(),
 				mappedBy,
-				isMappedByKey( propertyValue, mappedBy )
+				isMappedByKey( propertyValue, mappedBy ),
+				propertyValue.getOrderBy()
 		);
 
 		// Creating common mapper data.
 		final CommonCollectionMapperData commonCollectionMapperData = new CommonCollectionMapperData(
-				mainGenerator.getVerEntCfg(), referencedEntityName,
+				mainGenerator.getVerEntCfg(),
+				referencedEntityName,
 				propertyAuditingData.getPropertyData(),
-				referencingIdData, queryGenerator
+				referencingIdData,
+				queryGenerator,
+				propertyValue.getRole()
 		);
 
 		PropertyMapper fakeBidirectionalRelationMapper;
@@ -270,7 +277,9 @@ public final class CollectionMetadataGenerator {
 					// The mapper will only be used to map from entity to map, so no need to provide other details
 					// when constructing the PropertyData.
 					new PropertyData( auditMappedBy, null, null, null ),
-					referencingEntityName, false
+					referencingEntityName,
+					false,
+					false
 			);
 
 			final String positionMappedBy;
@@ -287,7 +296,15 @@ public final class CollectionMetadataGenerator {
 
 			// Checking if there's an index defined. If so, adding a mapper for it.
 			if ( positionMappedBy != null ) {
-				final Type indexType = ( (IndexedCollection) propertyValue ).getIndex().getType();
+				final Type indexType;
+				if ( IndexedCollection.class.isInstance( propertyValue ) ) {
+					indexType = ( (IndexedCollection) propertyValue ).getIndex().getType();
+				}
+				else {
+					// todo - do we need to reverse lookup the type anyway?
+					indexType = null;
+				}
+
 				fakeBidirectionalRelationIndexMapper = new SinglePropertyMapper(
 						PropertyData.forProperty( positionMappedBy, indexType )
 				);
@@ -448,7 +465,10 @@ public final class CollectionMetadataGenerator {
 				mainGenerator.getAuditStrategy(),
 				referencingIdData,
 				auditMiddleEntityName,
-				isRevisionTypeInId()
+				isRevisionTypeInId(),
+				propertyValue.getOrderBy() == null
+						? propertyValue.getManyToManyOrdering()
+						: propertyValue.getOrderBy()
 		);
 
 		// Adding the XML mapping for the referencing entity, if the relation isn't inverse.
@@ -490,7 +510,8 @@ public final class CollectionMetadataGenerator {
 				auditMiddleEntityName,
 				propertyAuditingData.getPropertyData(),
 				referencingIdData,
-				queryGenerator
+				queryGenerator,
+				propertyValue.getRole()
 		);
 
 		// Checking the type of the collection and adding an appropriate mapper.
@@ -506,8 +527,10 @@ public final class CollectionMetadataGenerator {
 		if ( propertyValue instanceof IndexedCollection ) {
 			final IndexedCollection indexedValue = (IndexedCollection) propertyValue;
 			final String mapKey = propertyAuditingData.getMapKey();
-			if ( mapKey == null ) {
-				// This entity doesn't specify a javax.persistence.MapKey. Mapping it to the middle entity.
+			final EnumType mapKeyEnumType = propertyAuditingData.getMapKeyEnumType();
+			if ( ( mapKey == null && mapKeyEnumType == null ) || ( mapKeyEnumType != null && referencedEntityName == null ) ) {
+				// This entity doesn't specify a javax.persistence.MapKey or there is a MapKeyEnumerated but its a non-entity type.
+				// Mapping it to the middle entity.
 				return addValueToMiddleTable(
 						indexedValue.getIndex(),
 						middleEntityXml,
@@ -517,11 +540,20 @@ public final class CollectionMetadataGenerator {
 						true
 				);
 			}
+			else if ( mapKeyEnumType != null ) {
+				final IdMappingData referencedIdMapping = mainGenerator.getEntitiesConfigurations()
+						.get( referencedEntityName ).getIdMappingData();
+				final int currentIndex = queryGeneratorBuilder == null ? 0 : queryGeneratorBuilder.getCurrentIndex();
+				return new MiddleComponentData(
+						new MiddleMapKeyEnumeratedComponentMapper( propertyAuditingData.getName() ),
+						currentIndex
+				);
+			}
 			else {
 				final IdMappingData referencedIdMapping = mainGenerator.getEntitiesConfigurations()
 						.get( referencedEntityName ).getIdMappingData();
 				final int currentIndex = queryGeneratorBuilder == null ? 0 : queryGeneratorBuilder.getCurrentIndex();
-				if ( "".equals( mapKey ) ) {
+				if ( mapKey != null && mapKey.isEmpty() ) {
 					// The key of the map is the id of the entity.
 					return new MiddleComponentData(
 							new MiddleMapKeyIdComponentMapper(
@@ -861,6 +893,8 @@ public final class CollectionMetadataGenerator {
 				middleEntityXml,
 				isRevisionTypeInId()
 		);
+
+		mainGenerator.addAdditionalColumns( middleEntityXml );
 
 		// All other properties should also be part of the primary key of the middle entity.
 		return middleEntityXmlId;

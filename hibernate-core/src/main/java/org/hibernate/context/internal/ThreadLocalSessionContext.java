@@ -160,7 +160,7 @@ public class ThreadLocalSessionContext extends AbstractCurrentSessionContext {
 	/**
 	 * Mainly for subclass usage.  This impl always returns true.
 	 *
-	 * @return Whether or not the the session should be flushed prior transaction completion.
+	 * @return Whether or not the the session should be flushed prior to transaction completion.
 	 */
 	protected boolean isAutoFlushEnabled() {
 		return true;
@@ -332,6 +332,7 @@ public class ThreadLocalSessionContext extends AbstractCurrentSessionContext {
 							|| "getTransaction".equals( methodName )
 							|| "isTransactionInProgress".equals( methodName )
 							|| "setFlushMode".equals( methodName )
+							|| "setHibernateFlushMode".equals( methodName )
 							|| "getFactory".equals( methodName )
 							|| "getSessionFactory".equals( methodName )
 							|| "getTenantIdentifier".equals( methodName ) ) {
@@ -342,7 +343,8 @@ public class ThreadLocalSessionContext extends AbstractCurrentSessionContext {
 						LOG.tracef( "Allowing invocation [%s] to proceed to real (non-transacted) session - deprecated methods", methodName );
 					}
 					else {
-						throw new HibernateException( methodName + " is not valid without active transaction" );
+						throw new HibernateException( "Calling method '" + methodName + "' is not valid without an active transaction (Current status: "
+								+ realSession.getTransaction().getStatus() + ")" );
 					}
 				}
 				LOG.tracef( "Allowing proxy invocation [%s] to proceed to real session", methodName );

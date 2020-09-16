@@ -52,6 +52,9 @@ public class Component extends SimpleValue implements MetaAttributable {
 
 	private java.util.Map<EntityMode,String> tuplizerImpls;
 
+	// cache the status of the type
+	private volatile Type type;
+
 	/**
 	 * @deprecated User {@link Component#Component(MetadataBuildingContext, PersistentClass)} instead.
 	 */
@@ -209,13 +212,28 @@ public class Component extends SimpleValue implements MetaAttributable {
 
 	@Override
 	public Type getType() throws MappingException {
-		// TODO : temporary initial step towards HHH-1907
-		final ComponentMetamodel metamodel = new ComponentMetamodel(
-				this,
-				getMetadata().getMetadataBuildingOptions()
-		);
-		final TypeFactory factory = getMetadata().getTypeConfiguration().getTypeResolver().getTypeFactory();
-		return isEmbedded() ? factory.embeddedComponent( metamodel ) : factory.component( metamodel );
+		// Resolve the type of the value once and for all as this operation generates a proxy class
+		// for each invocation.
+		// Unfortunately, there's no better way of doing that as none of the classes are immutable and
+		// we can't know for sure the current state of the property or the value.
+		Type localType = type;
+
+		if ( localType == null ) {
+			synchronized ( this ) {
+				if ( type == null ) {
+					// TODO : temporary initial step towards HHH-1907
+					final ComponentMetamodel metamodel = new ComponentMetamodel(
+							this,
+							getMetadata().getMetadataBuildingOptions()
+					);
+					final TypeFactory factory = getMetadata().getTypeConfiguration().getTypeResolver().getTypeFactory();
+					localType = isEmbedded() ? factory.embeddedComponent( metamodel ) : factory.component( metamodel );
+					type = localType;
+				}
+			}
+		}
+
+		return localType;
 	}
 
 	@Override
@@ -288,15 +306,15 @@ public class Component extends SimpleValue implements MetaAttributable {
 		}
 		return result;
 	}
-	
+
 	public boolean isKey() {
 		return isKey;
 	}
-	
+
 	public void setKey(boolean isKey) {
 		this.isKey = isKey;
 	}
-	
+
 	public boolean hasPojoRepresentation() {
 		return componentClassName!=null;
 	}
@@ -322,6 +340,18 @@ public class Component extends SimpleValue implements MetaAttributable {
 			return null;
 		}
 		return java.util.Collections.unmodifiableMap( tuplizerImpls );
+	}
+
+	/**
+	 * Returns the {@link Property} at the specified position in this {@link Component}.
+	 *
+	 * @param index index of the {@link Property} to return
+	 * @return {@link Property}
+	 * @throws IndexOutOfBoundsException - if the index is out of range(index < 0 || index >=
+	 * {@link #getPropertySpan()})
+	 */
+	public Property getProperty(int index) {
+		return properties.get( index );
 	}
 
 	public Property getProperty(String propertyName) throws MappingException {

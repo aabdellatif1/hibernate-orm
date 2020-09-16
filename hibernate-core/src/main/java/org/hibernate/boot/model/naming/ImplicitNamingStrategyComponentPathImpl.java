@@ -7,6 +7,7 @@
 package org.hibernate.boot.model.naming;
 
 import org.hibernate.boot.model.source.spi.AttributePath;
+import org.hibernate.internal.util.StringHelper;
 
 /**
  * An ImplicitNamingStrategy implementation which uses full composite paths
@@ -31,8 +32,8 @@ public class ImplicitNamingStrategyComponentPathImpl extends ImplicitNamingStrat
 	public static void process(AttributePath attributePath, StringBuilder sb) {
 		if ( attributePath.getParent() != null ) {
 			process( attributePath.getParent(), sb );
-			if ( !"".equals( attributePath.getParent().getProperty() ) ) {
-				sb.append( "_" );
+			if ( StringHelper.isNotEmpty( attributePath.getParent().getProperty() ) ) {
+				sb.append( '_' );
 			}
 		}
 

@@ -14,10 +14,10 @@ import org.hibernate.testing.RequiresDialect;
 import org.jboss.logging.Logger;
 import org.junit.Test;
 
-import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.Point;
-import com.vividsolutions.jts.io.WKBWriter;
-import com.vividsolutions.jts.io.WKTWriter;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.io.WKBWriter;
+import org.locationtech.jts.io.WKTWriter;
 
 @RequiresDialect(value = HANASpatialDialect.class, comment = "This test tests the HANA spatial functions not covered by Hibernate Spatial", jiraKey = "HHH-12426")
 public class TestHANASpatialFunctions extends TestSpatialFunctions {
@@ -1016,6 +1016,31 @@ public class TestHANASpatialFunctions extends TestSpatialFunctions {
 				"SELECT id, zmin(geom) FROM org.hibernate.spatial.integration.%s.GeomEntity where srid(geom) = %d",
 				pckg, expectationsFactory.getTestSrid() );
 		retrieveHQLResultsAndCompare( dbexpected, hql, pckg );
+	}
+
+	@Test
+	public void test_nestedfunction_on_jts() throws SQLException {
+		nestedfunction( JTS );
+	}
+
+	@Test
+	public void test_nestedfunction_on_geolatte() throws SQLException {
+		nestedfunction( GEOLATTE );
+	}
+
+	public void nestedfunction(String pckg) throws SQLException {
+		Map<Integer, Geometry> dbexpected = hanaExpectationsFactory.getNestedFunctionInner( expectationsFactory.getTestPolygon() );
+		String hql = format(
+				"SELECT id, geom FROM org.hibernate.spatial.integration.%s.GeomEntity g where dwithin(geom, srid(:filter, 0), 1) = true",
+				pckg );
+		Map<String, Object> params = createQueryParams( "filter", expectationsFactory.getTestPolygon() );
+		retrieveHQLResultsAndCompare( dbexpected, hql, params, pckg );
+		
+		dbexpected = hanaExpectationsFactory.getNestedFunctionOuter( expectationsFactory.getTestPolygon() );
+		hql = format(
+				"SELECT id, geom FROM org.hibernate.spatial.integration.%s.GeomEntity g where dwithin(:filter, srid(geom, 0), 1) = true",
+				pckg );
+		retrieveHQLResultsAndCompare( dbexpected, hql, params, pckg );
 	}
 
 	private String getGeometryTypeFromPackage(String pckg) {

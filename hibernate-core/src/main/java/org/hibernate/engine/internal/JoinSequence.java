@@ -47,6 +47,7 @@ public class JoinSequence {
 	private Selector selector;
 	private JoinSequence next;
 	private boolean isFromPart;
+	private Set<String> queryReferencedTables;
 
 	/**
 	 * Constructs a JoinSequence
@@ -155,9 +156,9 @@ public class JoinSequence {
 	}
 
 	/**
-	 * Embedds an implied from element into this sequence
+	 * Embeds an implied from element into this sequence
 	 *
-	 * @param fromElement The implied from element to embedd
+	 * @param fromElement The implied from element to embed
 	 * @return The Join memento
 	 */
 	public JoinSequence addJoin(ImpliedFromElement fromElement) {
@@ -333,9 +334,9 @@ public class JoinSequence {
 						join.getAlias(),
 						enabledFilters
 				);
-				condition = "".equals( manyToManyFilter )
+				condition = (manyToManyFilter != null && manyToManyFilter.isEmpty())
 						? on
-						: "".equals( on ) ? manyToManyFilter : on + " and " + manyToManyFilter;
+						: (on != null && on.isEmpty()) ? manyToManyFilter : on + " and " + manyToManyFilter;
 			}
 			else {
 				condition = on;
@@ -466,7 +467,7 @@ public class JoinSequence {
 			Set<String> treatAsDeclarations) {
 		final boolean include = includeSubclassJoins && isIncluded( alias );
 		joinFragment.addJoins(
-				joinable.fromJoinFragment( alias, innerJoin, include, treatAsDeclarations ),
+				joinable.fromJoinFragment( alias, innerJoin, include, treatAsDeclarations, queryReferencedTables ),
 				joinable.whereJoinFragment( alias, innerJoin, include, treatAsDeclarations )
 		);
 	}
@@ -483,7 +484,7 @@ public class JoinSequence {
 	 * @return {@link this}, for method chaining
 	 */
 	public JoinSequence addCondition(String condition) {
-		if ( condition.trim().length() != 0 ) {
+		if ( !StringHelper.isBlank( condition ) ) {
 			if ( !condition.startsWith( " and " ) ) {
 				conditions.append( " and " );
 			}
@@ -571,6 +572,15 @@ public class JoinSequence {
 
 	public boolean isThetaStyle() {
 		return useThetaStyle;
+	}
+
+	/**
+	 * Set all tables the query refers to. It allows to optimize the query.
+	 *
+	 * @param queryReferencedTables
+	 */
+	public void setQueryReferencedTables(Set<String> queryReferencedTables) {
+		this.queryReferencedTables = queryReferencedTables;
 	}
 
 	public Join getFirstJoin() {

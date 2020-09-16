@@ -32,7 +32,7 @@ public class SQLServer2005LimitHandler extends AbstractLimitHandler {
 	private static final String SELECT_DISTINCT = SELECT + " " + DISTINCT;
 	private static final String SELECT_DISTINCT_SPACE = SELECT_DISTINCT + " ";
 
-	final String SELECT_SPACE = "select ";
+	private static final String SELECT_SPACE = "select ";
 
 	private static final Pattern SELECT_DISTINCT_PATTERN = buildShallowIndexPattern( SELECT_DISTINCT_SPACE, true );
 	private static final Pattern SELECT_PATTERN = buildShallowIndexPattern( SELECT + "(.*)", true );
@@ -395,7 +395,7 @@ public class SQLServer2005LimitHandler extends AbstractLimitHandler {
 	}
 
 	/**
-	 * Geneartes a list of {@code IgnoreRange} objects that represent nested sections of the
+	 * Generates a list of {@code IgnoreRange} objects that represent nested sections of the
 	 * provided SQL buffer that should be ignored when performing regular expression matches.
 	 *
 	 * @param sql The SQL buffer.
@@ -585,7 +585,7 @@ public class SQLServer2005LimitHandler extends AbstractLimitHandler {
 		int index = offset;
 		boolean inString = false;
 		for ( ; index < sql.length(); ++index ) {
-			if ( sql.charAt( index ) == '\'' ) {
+			if ( sql.charAt( index ) == '\'' && !inString ) {
 				inString = true;
 			}
 			else if ( sql.charAt( index ) == '\'' && inString ) {

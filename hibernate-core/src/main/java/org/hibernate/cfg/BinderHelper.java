@@ -941,6 +941,7 @@ public class BinderHelper {
 			javax.persistence.Column metaColumn,
 			PropertyData inferredData,
 			boolean cascadeOnDelete,
+			boolean lazy,
 			Nullability nullability,
 			PropertyHolder propertyHolder,
 			EntityBinder entityBinder,
@@ -950,6 +951,7 @@ public class BinderHelper {
 		Any value = new Any( context, columns[0].getTable() );
 		AnyMetaDef metaAnnDef = inferredData.getProperty().getAnnotation( AnyMetaDef.class );
 
+		value.setLazy( lazy );
 		if ( metaAnnDef != null ) {
 			//local has precedence over general and can be mapped for future reference if named
 			bindAnyMetaDefs( inferredData.getProperty(), context );
@@ -1122,19 +1124,19 @@ public class BinderHelper {
 	
 	public static Map<String,String> toAliasTableMap(SqlFragmentAlias[] aliases){
 		Map<String,String> ret = new HashMap<>();
-		for ( int i = 0; i < aliases.length; i++ ){
-			if ( StringHelper.isNotEmpty( aliases[i].table() ) ){
-				ret.put( aliases[i].alias(), aliases[i].table() );
-}
+		for ( SqlFragmentAlias aliase : aliases ) {
+			if ( StringHelper.isNotEmpty( aliase.table() ) ) {
+				ret.put( aliase.alias(), aliase.table() );
+			}
 		}
 		return ret;
 	}
 	
 	public static Map<String,String> toAliasEntityMap(SqlFragmentAlias[] aliases){
 		Map<String,String> ret = new HashMap<>();
-		for (int i = 0; i < aliases.length; i++){
-			if (aliases[i].entity() != void.class){
-				ret.put( aliases[i].alias(), aliases[i].entity().getName() );
+		for ( SqlFragmentAlias aliase : aliases ) {
+			if ( aliase.entity() != void.class ) {
+				ret.put( aliase.alias(), aliase.entity().getName() );
 			}
 		}
 		return ret;

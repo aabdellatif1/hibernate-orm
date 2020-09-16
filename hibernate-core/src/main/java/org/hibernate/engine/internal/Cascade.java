@@ -12,14 +12,13 @@ import java.util.HashSet;
 import java.util.Iterator;
 
 import org.hibernate.HibernateException;
-import org.hibernate.bytecode.enhance.spi.LazyPropertyInitializer;
 import org.hibernate.bytecode.enhance.spi.interceptor.LazyAttributeLoadingInterceptor;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.spi.CascadingAction;
-import org.hibernate.engine.spi.CascadingActions;
 import org.hibernate.engine.spi.CollectionEntry;
 import org.hibernate.engine.spi.EntityEntry;
+import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.Status;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.internal.CoreLogging;
@@ -85,6 +84,7 @@ public final class Cascade {
 			if ( traceEnabled ) {
 				LOG.tracev( "Processing cascade {0} for: {1}", action, persister.getEntityName() );
 			}
+			final PersistenceContext persistenceContext = eventSource.getPersistenceContextInternal();
 
 			final Type[] types = persister.getPropertyTypes();
 			final String[] propertyNames = persister.getPropertyNames();
@@ -96,31 +96,52 @@ public final class Cascade {
 				final String propertyName = propertyNames[ i ];
 				final boolean isUninitializedProperty =
 						hasUninitializedLazyProperties &&
-						!persister.getInstrumentationMetadata().isAttributeLoaded( parent, propertyName );
+						!persister.getBytecodeEnhancementMetadata().isAttributeLoaded( parent, propertyName );
 
 				if ( style.doCascade( action ) ) {
 					final Object child;
 					if ( isUninitializedProperty  ) {
 						// parent is a bytecode enhanced entity.
-						// cascading to an uninitialized, lazy value.
-						if ( types[ i ].isCollectionType() ) {
-							// The collection does not need to be loaded from the DB.
-							// CollectionType#resolve will return an uninitialized PersistentCollection.
-							// The action will initialize the collection later, if necessary.
-							child = types[ i ].resolve( LazyPropertyInitializer.UNFETCHED_PROPERTY, eventSource, parent );
-							// TODO: it would be nice to be able to set the attribute in parent using
-							// persister.setPropertyValue( parent, i, child ).
-							// Unfortunately, that would cause the uninitialized collection to be
-							// loaded from the DB.
+						// Cascade to an uninitialized, lazy value only if
+						// parent is managed in the PersistenceContext.
+						// If parent is a detached entity being merged,
+						// then parent will not be in the PersistencContext
+						// (so lazy attributes must not be initialized).
+						if ( persistenceContext.getEntry( parent ) == null ) {
+							// parent was not in the PersistenceContext
+							continue;
 						}
-						else if ( action.performOnLazyProperty() ) {
-							// The (non-collection) attribute needs to be initialized so that
-							// the action can be performed on the initialized attribute.
-							LazyAttributeLoadingInterceptor interceptor = persister.getInstrumentationMetadata().extractInterceptor( parent );
+						if ( types[ i ].isCollectionType() ) {
+							// CollectionType#getCollection gets the PersistentCollection
+							// that corresponds to the uninitialized collection from the
+							// PersistenceContext. If not present, an uninitialized
+							// PersistentCollection will be added to the PersistenceContext.
+							// The action may initialize it later, if necessary.
+							// This needs to be done even when action.performOnLazyProperty() returns false.
+							final CollectionType collectionType = (CollectionType) types[i];
+							child = collectionType.getCollection(
+									collectionType.getKeyOfOwner( parent, eventSource ),
+									eventSource,
+									parent,
+									null
+							);
+						}
+						else if ( types[ i ].isComponentType() ) {
+							// Hibernate does not support lazy embeddables, so this shouldn't happen.
+							throw new UnsupportedOperationException(
+									"Lazy components are not supported."
+							);
+						}
+						else if ( action.performOnLazyProperty() && types[ i ].isEntityType() ) {
+							// Only need to initialize a lazy entity attribute when action.performOnLazyProperty()
+							// returns true.
+							LazyAttributeLoadingInterceptor interceptor = persister.getBytecodeEnhancementMetadata()
+									.extractInterceptor( parent );
 							child = interceptor.fetchAttribute( parent, propertyName );
+
 						}
 						else {
-							// Nothing to do, so just skip cascading to this lazy (non-collection) attribute.
+							// Nothing to do, so just skip cascading to this lazy attribute.
 							continue;
 						}
 					}
@@ -252,7 +273,8 @@ public final class Cascade {
 			if ( style.hasOrphanDelete() && action.deleteOrphans() ) {
 				// value is orphaned if loaded state for this property shows not null
 				// because it is currently null.
-				final EntityEntry entry = eventSource.getPersistenceContext().getEntry( parent );
+				final PersistenceContext persistenceContext = eventSource.getPersistenceContextInternal();
+				final EntityEntry entry = persistenceContext.getEntry( parent );
 				if ( entry != null && entry.getStatus() != Status.SAVING ) {
 					Object loadedValue;
 					if ( componentPathStackDepth == 0 ) {
@@ -280,15 +302,13 @@ public final class Cascade {
 					// orphaned if the association was nulled (child == null) or receives a new value while the
 					// entity is managed (without first nulling and manually flushing).
 					if ( child == null || ( loadedValue != null && child != loadedValue ) ) {
-						EntityEntry valueEntry = eventSource
-								.getPersistenceContext().getEntry(
-										loadedValue );
+						EntityEntry valueEntry = persistenceContext.getEntry( loadedValue );
 
 						if ( valueEntry == null && loadedValue instanceof HibernateProxy ) {
 							// un-proxy and re-associate for cascade operation
 							// useful for @OneToOne defined as FetchType.LAZY
-							loadedValue = eventSource.getPersistenceContext().unproxyAndReassociate( loadedValue );
-							valueEntry = eventSource.getPersistenceContext().getEntry( loadedValue );
+							loadedValue = persistenceContext.unproxyAndReassociate( loadedValue );
+							valueEntry = persistenceContext.getEntry( loadedValue );
 
 							// HHH-11965
 							// Should the unwrapped proxy value be equal via reference to the entity's property value
@@ -466,12 +486,13 @@ public final class Cascade {
 				: null;
 		if ( style.reallyDoCascade( action ) ) {
 			//not really necessary, but good for consistency...
-			eventSource.getPersistenceContext().addChildParent( child, parent );
+			final PersistenceContext persistenceContext = eventSource.getPersistenceContextInternal();
+			persistenceContext.addChildParent( child, parent );
 			try {
 				action.cascade( eventSource, child, entityName, anything, isCascadeDeleteEnabled );
 			}
 			finally {
-				eventSource.getPersistenceContext().removeChildParent( child );
+				persistenceContext.removeChildParent( child );
 			}
 		}
 	}
@@ -524,8 +545,9 @@ public final class Cascade {
 		final boolean deleteOrphans = style.hasOrphanDelete()
 				&& action.deleteOrphans()
 				&& elemType.isEntityType()
+				&& child instanceof PersistentCollection
 				// a newly instantiated collection can't have orphans
-				&& child instanceof PersistentCollection;
+				&& ! ( (PersistentCollection) child ).isNewlyInstantiated();
 
 		if ( deleteOrphans ) {
 			final boolean traceEnabled = LOG.isTraceEnabled();
@@ -551,7 +573,7 @@ public final class Cascade {
 		//TODO: suck this logic into the collection!
 		final Collection orphans;
 		if ( pc.wasInitialized() ) {
-			final CollectionEntry ce = eventSource.getPersistenceContext().getCollectionEntry( pc );
+			final CollectionEntry ce = eventSource.getPersistenceContextInternal().getCollectionEntry( pc );
 			orphans = ce==null
 					? java.util.Collections.EMPTY_LIST
 					: ce.getOrphans( entityName, pc );

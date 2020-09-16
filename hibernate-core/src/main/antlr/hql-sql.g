@@ -237,7 +237,19 @@ tokens
 		return false;
 	}
 
+	protected boolean isGroupExpressionResultVariableRef(AST ident) throws SemanticException {
+		return false;
+	}
+
 	protected void handleResultVariableRef(AST resultVariableRef) throws SemanticException {
+	}
+
+	protected AST createCollectionSizeFunction(AST collectionPath, boolean inSelect) throws SemanticException {
+		throw new UnsupportedOperationException( "Walker should implement" );
+	}
+
+	protected AST createCollectionPath(AST qualifier, AST reference) throws SemanticException {
+		throw new UnsupportedOperationException( "Walker should implement" );
 	}
 
 	protected AST lookupProperty(AST dot,boolean root,boolean inSelect) throws SemanticException {
@@ -394,7 +406,7 @@ resultVariableRef!
 	;
 
 groupClause
-	: #(GROUP { handleClauseStart( GROUP ); } (expr [ null ])+ ( #(HAVING logicalExpr) )? ) {
+	: #(GROUP { handleClauseStart( GROUP ); } ({ isGroupExpressionResultVariableRef( _t ) }? resultVariableRef | expr [ null ])+ ( #(HAVING logicalExpr) )? ) {
 		handleClauseEnd();
 	}
 	;
@@ -679,7 +691,10 @@ collectionFunction
 	;
 
 functionCall
-	: #(METHOD_CALL  {inFunctionCall=true;} pathAsIdent ( #(EXPR_LIST (exprOrSubquery [ null ])* ) )? ) {
+	: #( COLL_SIZE path:collectionPath ) {
+		#functionCall = createCollectionSizeFunction( #path, inSelect );
+	}
+	| #(METHOD_CALL  {inFunctionCall=true;} pathAsIdent ( #(EXPR_LIST (exprOrSubquery [ null ])* ) )? ) {
         processFunction( #functionCall, inSelect );
         inFunctionCall=false;
     }
@@ -688,6 +703,18 @@ functionCall
         inFunctionCall=false;
     }
 	| #(AGGREGATE aggregateExpr )
+	;
+
+collectionPath!
+// for now we do not support nested path refs.
+	: #( COLL_PATH ref:identifier (qualifier:collectionPathQualifier)? ) {
+		resolve( #qualifier );
+		#collectionPath = createCollectionPath( #qualifier, #ref );
+	}
+	;
+
+collectionPathQualifier
+	: addrExpr [true]
 	;
 
 constant

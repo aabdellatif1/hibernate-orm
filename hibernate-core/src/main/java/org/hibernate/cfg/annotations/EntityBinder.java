@@ -424,7 +424,7 @@ public class EntityBinder {
 					);
 				}
 			}
-			persistentClass.addFilter(filterName, cond, filter.deduceAliasInjectionPoints(), 
+			persistentClass.addFilter(filterName, cond, filter.deduceAliasInjectionPoints(),
 					toAliasTableMap(filter.aliases()), toAliasEntityMap(filter.aliases()));
 		}
 		LOG.debugf( "Import with entity name %s", name );
@@ -460,7 +460,7 @@ public class EntityBinder {
 				new NamedEntityGraphDefinition( annotation, name, persistentClass.getEntityName() )
 		);
 	}
-	
+
 	public void bindDiscriminatorValue() {
 		if ( StringHelper.isEmpty( discriminatorValue ) ) {
 			Value discriminator = persistentClass.getDiscriminator();
@@ -622,7 +622,11 @@ public class EntityBinder {
 		}
 		else {
 			if ( explicitCacheAnn != null ) {
-				LOG.cacheOrCacheableAnnotationOnNonRoot( persistentClass.getClassName() );
+				LOG.cacheOrCacheableAnnotationOnNonRoot(
+						persistentClass.getClassName() == null
+								? annotatedClass.getName()
+								: persistentClass.getClassName()
+				);
 			}
 			else if ( explicitCacheableAnn == null && persistentClass.getSuperclass() != null ) {
 				// we should inherit our super's caching config
@@ -1002,12 +1006,11 @@ public class EntityBinder {
 
 		SecondaryTables secondaryTables = annotatedClass.getAnnotation( SecondaryTables.class );
 		if ( secondaryTables != null ) {
-			for ( SecondaryTable secondaryTable2 : secondaryTables.value() ) {
-				if ( secondaryTable != null && nameToMatch.equals( secondaryTable.name() ) ) {
-					return secondaryTable;
+			for ( SecondaryTable secondaryTablesEntry : secondaryTables.value() ) {
+				if ( secondaryTablesEntry != null && nameToMatch.equals( secondaryTablesEntry.name() ) ) {
+					return secondaryTablesEntry;
 				}
 			}
-
 		}
 
 		return null;

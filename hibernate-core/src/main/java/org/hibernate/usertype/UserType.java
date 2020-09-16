@@ -12,9 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 import org.hibernate.HibernateException;
-import org.hibernate.boot.model.JavaTypeDescriptor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
-import org.hibernate.type.spi.TypeConfiguration;
 
 /**
  * This interface should be implemented by user-defined "types".
@@ -134,7 +132,7 @@ public interface UserType {
 	 * identifier values. (optional operation)
 	 *
 	 * @param value the object to be cached
-	 * @return a cachable representation of the object
+	 * @return a cacheable representation of the object
 	 * @throws HibernateException
 	 */
 	Serializable disassemble(Object value) throws HibernateException;
@@ -145,7 +143,7 @@ public interface UserType {
 	 *
 	 * @param cached the object to be cached
 	 * @param owner the owner of the cached object
-	 * @return a reconstructed object from the cachable representation
+	 * @return a reconstructed object from the cacheable representation
 	 * @throws HibernateException
 	 */
 	Object assemble(Serializable cached, Object owner) throws HibernateException;

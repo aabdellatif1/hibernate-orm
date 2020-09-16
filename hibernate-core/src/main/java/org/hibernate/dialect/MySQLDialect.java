@@ -10,9 +10,12 @@ import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.hibernate.JDBCException;
 import org.hibernate.NullPrecedence;
+import org.hibernate.PessimisticLockException;
 import org.hibernate.boot.TempTableDdlTransactionHandling;
 import org.hibernate.cfg.Environment;
 import org.hibernate.dialect.function.NoArgSQLFunction;
@@ -44,8 +47,14 @@ import org.hibernate.type.StandardBasicTypes;
 @SuppressWarnings("deprecation")
 public class MySQLDialect extends Dialect {
 
+	private static final Pattern ESCAPE_PATTERN = Pattern.compile(
+			"\\",
+			Pattern.LITERAL
+	);
+	public static final String ESCAPE_PATTERN_REPLACEMENT = Matcher.quoteReplacement(
+			"\\\\" );
 	private final UniqueDelegate uniqueDelegate;
-	private MySQLStorageEngine storageEngine;
+	private final MySQLStorageEngine storageEngine;
 
 	private static final LimitHandler LIMIT_HANDLER = new AbstractLimitHandler() {
 		@Override
@@ -67,10 +76,7 @@ public class MySQLDialect extends Dialect {
 		super();
 
 		String storageEngine = Environment.getProperties().getProperty( Environment.STORAGE_ENGINE );
-		if(storageEngine == null) {
-			storageEngine = System.getProperty( Environment.STORAGE_ENGINE );
-		}
-		if(storageEngine == null) {
+		if ( storageEngine == null ) {
 			this.storageEngine = getDefaultMySQLStorageEngine();
 		}
 		else if( "innodb".equals( storageEngine.toLowerCase() ) ) {
@@ -80,7 +86,7 @@ public class MySQLDialect extends Dialect {
 			this.storageEngine = MyISAMStorageEngine.INSTANCE;
 		}
 		else {
-			throw new UnsupportedOperationException( "The " + storageEngine + " storage engine is not supported!" );
+			throw new UnsupportedOperationException( "The storage engine '" + storageEngine + "' is not supported!" );
 		}
 
 		registerColumnType( Types.BIT, "bit" );
@@ -188,7 +194,7 @@ public class MySQLDialect extends Dialect {
 		registerFunction( "second", new StandardSQLFunction( "second", StandardBasicTypes.INTEGER ) );
 		registerFunction( "sec_to_time", new StandardSQLFunction( "sec_to_time", StandardBasicTypes.TIME ) );
 		registerFunction( "sysdate", new NoArgSQLFunction( "sysdate", StandardBasicTypes.TIMESTAMP ) );
-		registerFunction( "time", new StandardSQLFunction( "time", StandardBasicTypes.TIME ) );
+		registerFunction( "time", new StandardSQLFunction( "time", StandardBasicTypes.STRING ) );
 		registerFunction( "timestamp", new StandardSQLFunction( "timestamp", StandardBasicTypes.TIMESTAMP ) );
 		registerFunction( "time_to_sec", new StandardSQLFunction( "time_to_sec", StandardBasicTypes.INTEGER ) );
 		registerFunction( "to_days", new StandardSQLFunction( "to_days", StandardBasicTypes.LONG ) );
@@ -525,6 +531,17 @@ public class MySQLDialect extends Dialect {
 		return new SQLExceptionConversionDelegate() {
 			@Override
 			public JDBCException convert(SQLException sqlException, String message, String sql) {
+				switch ( sqlException.getErrorCode() ) {
+					case 1205:
+					case 3572: {
+						return new PessimisticLockException( message, sqlException, sql );
+					}
+					case 1207:
+					case 1206: {
+						return new LockAcquisitionException( message, sqlException, sql );
+					}
+				}
+
 				final String sqlState = JdbcExceptionHelper.extractSqlState( sqlException );
 
 				if ( "41000".equals( sqlState ) ) {
@@ -585,6 +602,12 @@ public class MySQLDialect extends Dialect {
 
 	@Override
 	protected String escapeLiteral(String literal) {
-		return super.escapeLiteral( literal ).replace("\\", "\\\\");
+		return ESCAPE_PATTERN.matcher( super.escapeLiteral( literal ) ).replaceAll( ESCAPE_PATTERN_REPLACEMENT );
 	}
+
+	@Override
+	public boolean supportsSelectAliasInGroupByClause() {
+		return true;
+	}
+
 }

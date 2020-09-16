@@ -14,23 +14,21 @@ import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.Table;
 import javax.persistence.Version;
-
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.AvailableSettings;
+import org.hibernate.dialect.CockroachDB192Dialect;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.H2Dialect;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.jcache.test.TestHelper;
-import org.hibernate.mapping.Collection;
 import org.hibernate.service.ServiceRegistry;
-import org.hibernate.tool.schema.Action;
-
+import org.hibernate.testing.SkipForDialect;
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseUnitTestCase;
+import org.hibernate.tool.schema.Action;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -88,6 +86,7 @@ public class RefreshUpdatedDataTest extends BaseUnitTestCase {
 	}
 
 	@Test
+	@SkipForDialect(value = CockroachDB192Dialect.class, comment = "does not support nested transactions")
 	public void testUpdateAndFlushThenRefresh() {
 		final String BEFORE = "before";
 
@@ -188,7 +187,7 @@ public class RefreshUpdatedDataTest extends BaseUnitTestCase {
 		);
 	}
 
-	@Entity(name = "ReadWriteCacheableItem")
+	@Entity(name = "RwItem")
 	@Table(name = "RW_ITEM")
 	@Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region = "item")
 	public static class ReadWriteCacheableItem {
@@ -231,7 +230,7 @@ public class RefreshUpdatedDataTest extends BaseUnitTestCase {
 		}
 	}
 
-	@Entity(name = "ReadWriteVersionedCacheableItem")
+	@Entity(name = "RwVersionedItem")
 	@Table(name = "RW_VERSIONED_ITEM")
 	@Cache(usage = CacheConcurrencyStrategy.READ_WRITE, region = "item")
 	public static class ReadWriteVersionedCacheableItem {
@@ -277,7 +276,7 @@ public class RefreshUpdatedDataTest extends BaseUnitTestCase {
 		}
 	}
 
-	@Entity(name = "NonStrictReadWriteCacheableItem")
+	@Entity(name = "NrwItem")
 	@Table(name = "RW_NOSTRICT_ITEM")
 	@Cache(usage = CacheConcurrencyStrategy.NONSTRICT_READ_WRITE, region = "item")
 	public static class NonStrictReadWriteCacheableItem {
@@ -320,7 +319,7 @@ public class RefreshUpdatedDataTest extends BaseUnitTestCase {
 		}
 	}
 
-	@Entity(name = "NonStrictReadWriteVersionedCacheableItem")
+	@Entity(name = "NrwVersionedItem")
 	@Table(name = "RW_NOSTRICT_VER_ITEM")
 	@Cache(usage = CacheConcurrencyStrategy.NONSTRICT_READ_WRITE, region = "item")
 	public static class NonStrictReadWriteVersionedCacheableItem {

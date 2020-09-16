@@ -15,7 +15,9 @@ import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.MappingException;
+import org.hibernate.bytecode.enhance.spi.interceptor.EnhancementAsProxyLazinessInterceptor;
 import org.hibernate.bytecode.spi.BytecodeEnhancementMetadata;
+import org.hibernate.bytecode.spi.NotInstrumentedException;
 import org.hibernate.cache.spi.access.EntityDataAccess;
 import org.hibernate.cache.spi.access.NaturalIdDataAccess;
 import org.hibernate.cache.spi.entry.CacheEntry;
@@ -131,6 +133,20 @@ public interface EntityPersister extends EntityDefinition {
 	 *@return The metamodel
 	 */
 	EntityMetamodel getEntityMetamodel();
+
+	/**
+	 * Called from {@link EnhancementAsProxyLazinessInterceptor} to trigger load of
+	 * the entity's non-lazy state as well as the named attribute we are accessing
+	 * if it is still uninitialized after fetching non-lazy state
+	 */
+	default Object initializeEnhancedEntityUsedAsProxy(
+			Object entity,
+			String nameOfAttributeBeingAccessed,
+			SharedSessionContractImplementor session) {
+		throw new UnsupportedOperationException(
+				"Initialization of entity enhancement used to act like a proxy is not supported by this EntityPersister : " + getClass().getName()
+		);
+	}
 
 	/**
 	 * Determine whether the given name represents a subclass entity
@@ -360,17 +376,27 @@ public interface EntityPersister extends EntityDefinition {
 	Object load(Serializable id, Object optionalObject, LockMode lockMode, SharedSessionContractImplementor session)
 	throws HibernateException;
 
+	default Object load(Serializable id, Object optionalObject, LockMode lockMode, SharedSessionContractImplementor session, Boolean readOnly)
+	throws HibernateException {
+		return load( id, optionalObject, lockMode, session );
+	}
+
 	/**
 	 * Load an instance of the persistent class.
 	 */
 	Object load(Serializable id, Object optionalObject, LockOptions lockOptions, SharedSessionContractImplementor session)
 	throws HibernateException;
 
+	default Object load(Serializable id, Object optionalObject, LockOptions lockOptions, SharedSessionContractImplementor session, Boolean readOnly)
+			throws HibernateException {
+		return load( id, optionalObject, lockOptions, session );
+	}
+
 	/**
 	 * Performs a load of multiple entities (of this type) by identifier simultaneously.
 	 *
 	 * @param ids The identifiers to load
-	 * @param session The originating Sesison
+	 * @param session The originating Session
 	 * @param loadOptions The options for loading
 	 *
 	 * @return The loaded, matching entities
@@ -530,7 +556,7 @@ public interface EntityPersister extends EntityDefinition {
 	 * Does this class have a natural id cache
 	 */
 	boolean hasNaturalIdCache();
-	
+
 	/**
 	 * Get the NaturalId cache (optional operation)
 	 */
@@ -798,7 +824,11 @@ public interface EntityPersister extends EntityDefinition {
 	EntityTuplizer getEntityTuplizer();
 
 	BytecodeEnhancementMetadata getInstrumentationMetadata();
-	
+
+	default BytecodeEnhancementMetadata getBytecodeEnhancementMetadata() {
+		return getInstrumentationMetadata();
+	}
+
 	FilterAliasGenerator getFilterAliasGenerator(final String rootAlias);
 
 	/**
@@ -811,4 +841,12 @@ public interface EntityPersister extends EntityDefinition {
 	int[] resolveAttributeIndexes(String[] attributeNames);
 
 	boolean canUseReferenceCacheEntries();
+
+	/**
+	 * @deprecated Since 5.4.1, this is no longer used.
+	 */
+	@Deprecated
+	default boolean canIdentityInsertBeDelayed() {
+		return false;
+	}
 }

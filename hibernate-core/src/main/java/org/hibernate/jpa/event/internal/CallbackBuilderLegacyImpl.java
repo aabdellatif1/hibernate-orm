@@ -40,20 +40,19 @@ import org.jboss.logging.Logger;
  *
  * @author Steve Ebersole
  */
-public class CallbackBuilderLegacyImpl implements CallbackBuilder {
+final class CallbackBuilderLegacyImpl implements CallbackBuilder {
 	private static final Logger log = Logger.getLogger( CallbackBuilderLegacyImpl.class );
 
 	private final ManagedBeanRegistry managedBeanRegistry;
 	private final ReflectionManager reflectionManager;
 
-	public CallbackBuilderLegacyImpl(ManagedBeanRegistry managedBeanRegistry, ReflectionManager reflectionManager) {
+	CallbackBuilderLegacyImpl(ManagedBeanRegistry managedBeanRegistry, ReflectionManager reflectionManager) {
 		this.managedBeanRegistry = managedBeanRegistry;
 		this.reflectionManager = reflectionManager;
 	}
 
 	@Override
 	public void buildCallbacksForEntity(String entityClassName, CallbackRegistrar callbackRegistrar) {
-		final boolean debugEnabled = log.isDebugEnabled();
 		try {
 			final XClass entityXClass = reflectionManager.classForName( entityClassName );
 			final Class entityClass = reflectionManager.toClass( entityXClass );
@@ -61,7 +60,7 @@ public class CallbackBuilderLegacyImpl implements CallbackBuilder {
 				if ( callbackRegistrar.hasRegisteredCallbacks( entityClass, callbackType ) ) {
 					// this most likely means we have a class mapped multiple times using the hbm.xml
 					// "entity name" feature
-					if ( debugEnabled ) {
+					if ( log.isDebugEnabled() ) {
 						log.debugf(
 								"CallbackRegistry reported that Class [%s] already had %s callbacks registered; " +
 										"assuming this means the class was mapped twice " +
@@ -116,7 +115,6 @@ public class CallbackBuilderLegacyImpl implements CallbackBuilder {
 		XClass currentClazz = beanClass;
 		boolean stopListeners = false;
 		boolean stopDefaultListeners = false;
-		final boolean debugEnabled = log.isDebugEnabled();
 		do {
 			Callback callback = null;
 			List<XMethod> methods = currentClazz.getDeclaredMethods();
@@ -137,7 +135,7 @@ public class CallbackBuilderLegacyImpl implements CallbackBuilder {
 								);
 							}
 							ReflectHelper.ensureAccessibility( method );
-							if ( debugEnabled ) {
+							if ( log.isDebugEnabled() ) {
 								log.debugf(
 										"Adding %s as %s callback for entity %s",
 										methodName,
@@ -213,7 +211,7 @@ public class CallbackBuilderLegacyImpl implements CallbackBuilder {
 									);
 								}
 								ReflectHelper.ensureAccessibility( method );
-								if ( debugEnabled ) {
+								if ( log.isDebugEnabled() ) {
 									log.debugf(
 											"Adding %s as %s callback for entity %s",
 											methodName,
@@ -245,7 +243,6 @@ public class CallbackBuilderLegacyImpl implements CallbackBuilder {
 		final String embeddableClassName = embeddableProperty.getType().getReturnedClass().getName();
 		final XClass embeddableXClass = reflectionManager.classForName( embeddableClassName );
 		final Getter embeddableGetter = embeddableProperty.getGetter( entityClass );
-		final boolean debugEnabled = log.isDebugEnabled();
 		final List<Callback> callbacks = new ArrayList<>();
 		final List<String> callbacksMethodNames = new ArrayList<>();
 		XClass currentClazz = embeddableXClass;
@@ -269,7 +266,7 @@ public class CallbackBuilderLegacyImpl implements CallbackBuilder {
 								);
 							}
 							ReflectHelper.ensureAccessibility( method );
-							if ( debugEnabled ) {
+							if ( log.isDebugEnabled() ) {
 								log.debugf(
 										"Adding %s as %s callback for entity %s",
 										methodName,

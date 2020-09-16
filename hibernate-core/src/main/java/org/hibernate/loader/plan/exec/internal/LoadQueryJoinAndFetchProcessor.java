@@ -71,7 +71,7 @@ public class LoadQueryJoinAndFetchProcessor {
 	private final SessionFactoryImplementor factory;
 
 	/**
-	 * Instantiates a LoadQueryBuilderHelper with the given information
+	 * Instantiates a LoadQueryJoinAndFetchProcessor with the given information
 	 *
 	 * @param aliasResolutionContext
 	 * @param buildingParameters
@@ -259,9 +259,11 @@ public class LoadQueryJoinAndFetchProcessor {
 		);
 
 		String[] joinColumns = join.resolveAliasedLeftHandSideJoinConditionColumns( lhsTableAlias );
-		if ( joinColumns.length == 0 ) {
+		QuerySpace lhsQuerySpace = join.getLeftHandSide();
+		if ( joinColumns.length == 0 && lhsQuerySpace instanceof EntityQuerySpace ) {
 			// When no columns are available, this is a special join that involves multiple subtypes
-			AbstractEntityPersister persister = (AbstractEntityPersister) ( (EntityQuerySpace) join.getLeftHandSide() ).getEntityPersister();
+			EntityQuerySpace entityQuerySpace = (EntityQuerySpace) lhsQuerySpace;
+			AbstractEntityPersister persister = (AbstractEntityPersister) entityQuerySpace.getEntityPersister();
 
 			String[][] polyJoinColumns = persister.getPolymorphicJoinColumns(
 					lhsTableAlias,
